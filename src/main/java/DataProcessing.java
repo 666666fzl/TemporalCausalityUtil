@@ -198,6 +198,9 @@ public class DataProcessing {
             String tmlFilename,
             String origTokenizedFile
     ) throws ParserConfigurationException, IOException, SAXException {
+        double numLinkByQuang = 0;
+        double numLinkByUs = 0;
+        System.out.println(tmlFilename);
         List<RCLink> res = new ArrayList<>();
         int lid = 0;
         File file = new File(tmlFilename);
@@ -235,38 +238,72 @@ public class DataProcessing {
                 String source = relArr[1];
                 String dest = relArr[2];
 
-                System.out.println(rel);
+                //System.out.println(rel);
                 String []sourceArr = source.split("_");
                 int sourceLineNum = Integer.parseInt(sourceArr[0]);
                 int sourceTokenNum = Integer.parseInt(sourceArr[1]);
 
                 String []destArr = dest.split("_");
                 int destLineNum = Integer.parseInt(destArr[0]);
-                int desteTokenNum = Integer.parseInt(destArr[1]);
+                int destTokenNum = Integer.parseInt(destArr[1]);
 
-                String sourceVerb = origTokenizedFile.split(System.getProperty("line.separator"))[sourceLineNum]
-                        .split(" ")[sourceTokenNum].split("/")[0];
-                String destVerb = origTokenizedFile.split(System.getProperty("line.separator"))[destLineNum]
-                        .split(" ")[desteTokenNum].split("/")[0];
+                String []sourceLine = origTokenizedFile.split(System.getProperty("line.separator"))[sourceLineNum].split(" ");
+                String sourceVerb = sourceLine[sourceTokenNum].split("/")[0];
+                String sourcePrefix = sourceTokenNum==0?"":sourceLine[sourceTokenNum-1].split("/")[0];
+                String sourceSuffix = sourceLine.length >= sourceTokenNum+1?"":sourceLine[sourceTokenNum+1].split("/")[0];
+
+                String []destLine = origTokenizedFile.split(System.getProperty("line.separator"))[destLineNum].split(" ");
+                String destVerb = destLine[destTokenNum].split("/")[0];
+                String destPrefix = destTokenNum==0?"":destLine[destTokenNum-1].split("/")[0];
+                String destSuffix = destLine.length >= destTokenNum+1?"":destLine[destTokenNum+1].split("/")[0];
 
                 String sourceLineInTml = lines[sourceLineNum];
                 String destLineInTml = lines[destLineNum];
 
-                String sourceVerbPattern = String.format("<EVENT eid=\"(e\\d+)\" class=\"\\w+\" tense=\"\\w+\" aspect=\"\\w+\" polarity=\"\\w+\" modality=\"\\w+\">%s</EVENT>", sourceVerb);
-                String destVerbPattern = String.format("<EVENT eid=\"(e\\d+)\" class=\"\\w+\" tense=\"\\w+\" aspect=\"\\w+\" polarity=\"\\w+\" modality=\"\\w+\">%s</EVENT>", destVerb);
+                String sourceVerbPattern = String.format(
+                        "%s\\s*<EVENT eid=\"(e\\d+)\" class=\"\\w+\" tense=\"\\w+\" aspect=\"\\w+\" polarity=\"\\w+\" modality=\"\\w+\">%s</EVENT>\\s*%s",
+                        sourcePrefix,
+                        sourceVerb,
+                        sourceSuffix
+                );
+                String destVerbPattern = String.format(
+                        "%s\\s+<EVENT eid=\"(e\\d+)\" class=\"\\w+\" tense=\"\\w+\" aspect=\"\\w+\" polarity=\"\\w+\" modality=\"\\w+\">%s</EVENT>\\s*%s",
+                        destPrefix,
+                        destVerb,
+                        destSuffix
+                );
 
                 String sourceEiid="", destEiid="";
 
                 Pattern r = Pattern.compile(sourceVerbPattern);
                 Matcher m = r.matcher(sourceLineInTml);
                 boolean found = m.find();
+                boolean needToLookMore = false;
+                String backupEiid = "";
                 if (found) {
                     String eid = m.group(1);
                     sourceEiid = eventInstanceMap.get(eid);
-                } else {
-                    System.out.println("NO MATCH: " + sourceVerb);
+                    while(m.find()) {
+                        needToLookMore = true;
+                        System.out.println("source " + m.group(1));
+                        backupEiid = m.group(1);
+                        System.out.println(rel);
+                        System.out.println(String.join(" ", Arrays.copyOfRange(sourceLine, sourceTokenNum-2, sourceTokenNum+3)));
+                    }
                 }
 
+                if (needToLookMore) {
+                    int firstOccurrence = String.join(" ", sourceLine).indexOf(String.join(" ", Arrays.copyOfRange(sourceLine, sourceTokenNum-1, sourceTokenNum+2)));
+                    int secondOccurrence = String.join(" ", sourceLine).indexOf(String.join(" ", Arrays.copyOfRange(sourceLine, sourceTokenNum-1, sourceTokenNum+2)), firstOccurrence + 1);
+                    int realOccurence = String.join(" ", sourceLine).indexOf(String.join(" ", Arrays.copyOfRange(sourceLine, sourceTokenNum-2, sourceTokenNum+3)));
+                    if (realOccurence > firstOccurrence) {
+                        sourceEiid = backupEiid;
+                        System.out.println("should be " + sourceEiid);
+                    } else {
+                        System.out.println("no change");
+                    }
+                }
+                needToLookMore = false;
                 r = Pattern.compile(destVerbPattern);
                 m = r.matcher(destLineInTml);
 
@@ -274,17 +311,37 @@ public class DataProcessing {
                 if (found) {
                     String eid = m.group(1);
                     destEiid = eventInstanceMap.get(eid);
-                } else {
-                    System.out.println("NO MATCH: " + destVerb);
+                    while(m.find()) {
+                        needToLookMore = true;
+                        backupEiid = m.group(1);
+                        System.out.println("dest " + m.group(1));
+                        System.out.println(rel);
+                        System.out.println(String.join(" ", Arrays.copyOfRange(destLine, destTokenNum-2, destTokenNum+3)));
+                    }
                 }
-
+                if (needToLookMore) {
+                    int firstOccurrence = String.join(" ", destLine).indexOf(String.join(" ", Arrays.copyOfRange(destLine, destTokenNum-1, destTokenNum+2)));
+                    int secondOccurrence = String.join(" ", destLine).indexOf(String.join(" ", Arrays.copyOfRange(destLine, destTokenNum-1, destTokenNum+2)), firstOccurrence + 1);
+                    int realOccurence = String.join(" ", destLine).indexOf(String.join(" ", Arrays.copyOfRange(destLine, destTokenNum-2, destTokenNum+3)));
+                    if (realOccurence > firstOccurrence) {
+                        destEiid = backupEiid;
+                        System.out.println("should be " + destEiid);
+                    } else {
+                        System.out.println("no change");
+                    }
+                }
 
                 if (sourceEiid != "" && destEiid != "") {
                     RCLink link = new RCLink(type, sourceEiid, destEiid, "l" + lid++);
                     res.add(link);
+                    numLinkByUs ++;
+                    numLinkByQuang ++;
+                } else {
+                    numLinkByQuang ++;
                 }
             }
         }
+        System.out.println("Out links: " + numLinkByUs + "; Quang links: " + numLinkByQuang + "; ratio: " + (1-numLinkByUs/numLinkByQuang));
         return res;
     }
 
